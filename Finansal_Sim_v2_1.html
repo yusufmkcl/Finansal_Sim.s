@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finansal Sim.</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .fade-in { animation: fadeIn 0.4s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Sayı inputlarındaki okları gizlemek için isteğe bağlı */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+    <script>
+        window.MathJax = { tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] } };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js" id="MathJax-script" async></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans p-6">
+
+<div class="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+    <!-- Başlık -->
+    <div class="bg-indigo-700 p-6 text-white text-center">
+        <h1 class="text-3xl font-bold">Kredi & Tahvil Fiyatlama</h1>
+        <p class="text-indigo-200 mt-2">Sabit & Değişken Faiz, Verim Eğrisi, Nelson-Siegel, PV & Duration</p>
+    </div>
+
+    <!-- 1. Aşama: Faiz Tipi Seçimi -->
+    <div class="p-6 border-b flex justify-center gap-6 bg-gray-100">
+        <button onclick="setMode('sabit')" id="btnSabit" class="px-8 py-3 rounded-lg font-bold text-lg bg-indigo-600 text-white shadow-md transition-colors">Sabit Faizli</button>
+        <button onclick="setMode('degisken')" id="btnDegisken" class="px-8 py-3 rounded-lg font-bold text-lg bg-white text-gray-700 shadow-md border hover:bg-gray-50 transition-colors">Değişken Faizli</button>
+    </div>
+
+    <div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- SOL PANEL: GİRDİLER -->
+        <div class="lg:col-span-1 space-y-6 fade-in">
+            <!-- Temel Parametreler -->
+            <div id="temelParametrelerBox" class="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Temel Parametreler</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Anapara (TL)</label>
+                    <input type="number" id="anapara" value="100000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Vade (Ay)</label>
+                    <input type="number" id="vade" value="48" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Ödeme Tipi</label>
+                    <select id="odemeTipi" onchange="togglePeriyotlar(); hesaplaMotoru();" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                        <option value="esit_anapara">Eşit Anapara</option>
+                        <option value="esit_taksit">Eşit Taksit (Anüite)</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-2">
+                    <div>
+                        <label id="lblFaizPeriyot" class="block text-xs font-bold text-gray-600 uppercase tracking-wide">Faiz Periyodu</label>
+                        <input type="number" id="faizPeriyot" value="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                    </div>
+                    <div id="divAnaPeriyot">
+                        <label class="block text-xs font-bold text-gray-600 uppercase tracking-wide">Anapara Periyodu</label>
+                        <input type="number" id="anaPeriyot" value="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                    </div>
+                </div>
+                <p id="periyotHataMesaji" class="text-xs text-red-600 font-semibold mt-2 hidden">⚠️ Vade, periyotlara tam bölünmüyor! Lütfen Vade'yi periyotların katı olacak şekilde girin.</p>
+
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700">Anaparasız Dönem (Taksit Sayısı)</label>
+                    <input type="number" id="graceTaksitSayisi" value="0" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                    <p class="text-xs text-gray-500 mt-1">İlk "n" anapara taksitinde sadece faiz ödenir, anapara ötelenir.</p>
+                </div>
+                <p id="graceHataMesaji" class="text-xs text-red-600 font-semibold mt-2 hidden">⚠️ Anaparasız taksit sayısı, toplam taksit sayısına eşit veya fazla olamaz!</p>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700">Enstrüman Faizi (%)</label>
+                    <input type="number" id="sabitFaiz" value="24.00" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                </div>
+            </div>
+
+            <!-- SABİT FAİZ AYARLARI -->
+            <div id="panelSabit" class="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">İskonto Ayarları</h3>
+                <div class="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-3 rounded-lg mb-4 leading-relaxed">
+                    <strong>📌 Not:</strong> Enstrüman Faizi sabit kalır; her taksit bu eğriden okunan o aya özgü spot oranıyla iskontolanır.
+                </div>
+                <label class="block text-sm font-bold text-gray-700 mb-2">Piyasa Beklentilerinizi Girin (%)</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">1 Ay</span><input type="number" id="sb_e_1m" value="37.5054" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                    <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">6 Ay</span><input type="number" id="sb_e_6m" value="37.3729" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                    <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">12 Ay</span><input type="number" id="sb_e_12m" value="36.3990" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                    <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">24 Ay</span><input type="number" id="sb_e_24m" value="35.8706" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                    <div class="flex items-center col-span-2"><span class="w-10 text-xs font-bold text-gray-500">60 Ay</span><input type="number" id="sb_e_60m" value="33.8720" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- DEĞİŞKEN FAİZ AYARLARI -->
+            <div id="panelDegisken" class="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm hidden">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Değişken Faiz Ayarları</h3>
+                
+                <div class="flex gap-2 mb-4 bg-gray-200 p-1 rounded-lg">
+                    <button onclick="setDegiskenMode('endeksli')" id="btnEndeksli" class="flex-1 py-1 rounded-md bg-white shadow text-sm font-bold">Endeksli</button>
+                    <button onclick="setDegiskenMode('endekssiz')" id="btnEndekssiz" class="flex-1 py-1 rounded-md text-gray-600 text-sm font-bold">Endekssiz</button>
+                </div>
+
+                <!-- Endeksli Girdiler -->
+                <div id="inputsEndeksli">
+                    <div class="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-3 rounded-lg mb-4 leading-relaxed">
+                        <strong>📌 Uyarı:</strong> Faiz değişme periyodu geldiğinde bu tabloyu güncellemeyi unutmayın. Kalan anaparayı ve vadeyi güncelleyerek yeni nakit akışını bulabilirsiniz.
+                    </div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Spot Eğrisi Girin (%)</label>
+                    <!-- 4 basamaklı görünmesi için step="0.0001" -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">1 Ay</span><input type="number" id="e_1m" value="37.5054" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">6 Ay</span><input type="number" id="e_6m" value="37.3729" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">12 Ay</span><input type="number" id="e_12m" value="36.3990" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">24 Ay</span><input type="number" id="e_24m" value="35.8706" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center col-span-2"><span class="w-10 text-xs font-bold text-gray-500">60 Ay</span><input type="number" id="e_60m" value="33.8720" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-bold text-gray-700">Banka Marjı / Spread (%)</label>
+                        <input type="number" id="spread" value="2" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-blue-50">
+                    </div>
+                </div>
+
+                <!-- Endekssiz Girdiler -->
+                <div id="inputsEndekssiz" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Senaryo Seçimi</label>
+                    <select id="senaryoTipi" onchange="senaryoDoldur()" class="mb-4 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                        <option value="notr">Nötr Senaryo</option>
+                        <option value="iyimser">İyimser Senaryo (Faiz Düşüşü)</option>
+                        <option value="kotumser">Kötümser Senaryo (Stres)</option>
+                        <option value="kendi">Kendi Beklentim (Manuel)</option>
+                    </select>
+
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Beklenti Eğrisi (%)</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">1 Ay</span><input type="number" id="s_1m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">6 Ay</span><input type="number" id="s_6m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">12 Ay</span><input type="number" id="s_12m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">24 Ay</span><input type="number" id="s_24m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
+                        <div class="flex items-center col-span-2"><span class="w-10 text-xs font-bold text-gray-500">60 Ay</span><input type="number" id="s_60m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
+                    </div>
+                </div>
+            </div>            
+        </div>
+
+        <!-- SAĞ PANEL: SONUÇLAR VE GRAFİKLER -->
+        <div class="lg:col-span-2 space-y-6 fade-in">
+            
+            <!-- Risk Metrikleri -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white p-4 border rounded-xl shadow-sm text-center relative overflow-hidden flex flex-col justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium relative z-10">Toplam PV</p>
+                        <p id="resPV" class="text-2xl font-bold text-gray-800 relative z-10">-</p>
+                    </div>
+                    <p id="resPVNote" class="text-xs mt-3 text-gray-400 relative z-10"></p>
+                </div>
+                <!-- Macaulay Duration Metriği ve Dinamik Yorum -->
+                <div class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Macaulay Duration</p>
+                        <p id="resMac" class="text-2xl font-bold text-gray-800">-</p>
+                    </div>
+                    <p class="text-[11px] mt-3 text-gray-500 leading-tight border-t pt-2">
+                        Ortalama olarak <span id="macYilText" class="font-bold text-gray-700">0</span> yıl içerisinde varlığınızın nakit akışları başlangıç maliyetini karşılamış olacaktır.
+                    </p>
+                </div>
+                <!-- Modified Duration Metriği ve Dinamik Yorum -->
+                <div class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500 font-medium">Modified Duration</p>
+                        <p id="resMod" class="text-2xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="text-[11px] mt-3 text-gray-500 leading-tight border-t pt-2">
+                        İskonto oranının <span class="whitespace-nowrap">% <input type="number" id="faizSok" value="1" step="0.1" class="w-12 text-center border rounded border-gray-300 py-0.5 text-gray-800 bg-gray-50 focus:ring-indigo-500"></span> değişmesi durumunda varlığın değeri yaklaşık <span id="modDegisimText" class="font-bold text-gray-700">-%0.00</span> değişir.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nelson-Siegel Eğrisi -->
+            <div id="chartContainer" class="bg-white p-4 border rounded-xl shadow-sm hidden">
+                <h3 class="text-sm font-bold text-gray-700 mb-2">Verim Eğrisi (%)</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="nsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Nakit Akış Tablosu -->
+            <div class="bg-white border rounded-xl shadow-sm overflow-hidden">
+                <h3 class="text-lg font-semibold text-gray-800 p-4 border-b bg-gray-50">Nakit Akış Tablosu</h3>
+                <div class="overflow-x-auto max-h-[500px]">
+                    <table class="min-w-full text-sm text-left relative">
+                        <thead class="bg-gray-100 text-gray-600 font-medium sticky top-0 shadow-sm z-10">
+                            <tr>
+                                <th class="py-3 px-4">Ay</th>
+                                <th id="thFaizOrani" class="py-3 px-4 hidden">Faiz Oranı</th>
+                                <th class="py-3 px-4">Ödenen Anapara</th>
+                                <th class="py-3 px-4">Ödenen Faiz</th>
+                                <th class="py-3 px-4">Toplam Nakit Akışı</th>
+                                <th class="py-3 px-4">Kalan Anapara</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabloGövde" class="divide-y divide-gray-200">
+                            <!-- JS ile doldurulacak -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Metodoloji Notu: Forward Faiz Hesaplama Mantığı -->
+            <details id="metodolojiNotu" class="bg-slate-50 border border-slate-200 rounded-xl text-xs hidden">
+                <summary class="cursor-pointer select-none font-bold text-slate-700 p-3">📐 Metodoloji: Forward Faiz Nasıl Hesaplanıyor?</summary>
+                <div class="px-4 pb-4 text-slate-600 leading-relaxed space-y-2">
+                    <p>
+                        Tablodaki her dönem için gösterilen faiz oranı, o dönemin başlangıcı ile bitişi
+                        arasında (eğriden) hiçbir arbitraj imkânı bırakmayacak şekilde türetilen
+                        <strong>ileri (forward) faiz oranıdır</strong>.
+                    </p>
+                    
+                    <!-- EKLENEN ÖRNEK BÖLÜMÜ -->
+                    <div class="bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 my-3">
+                        <p class="mb-2">
+                            <strong>Örnek:</strong> 3. ve 4. seneler arasına etki eden forward oranını bulmak isteyelim. Arbitrajsızlık ilkesi gereği; 4 yıllık bir yatırımın toplam getirisi, 3 yıllık yatırım yapıp ardından kalan 1 yıl için (o döneme ait forward oranıyla) yatırıma devam etmenin getirisine eşit olmalıdır:
+                        </p>
+                        <p class="text-center py-2 text-indigo-900 font-medium">$$ (1 + R_4)^4 = (1 + R_3)^3 \times (1 + F_4) $$</p>
+                        <p>
+                            Eşitliğin sağ tarafındaki <strong>$F_4$</strong>, <strong>3. yıl ile 4. yıl arasında etki eden faiz oranıdır</strong>.
+                        </p>
+                    </div>
+                    <!-- EKLENEN ÖRNEK BÖLÜMÜ SONU -->
+
+                    <p>
+                        Yukarıdaki temel mantık bu şekilde ifade edilebilir:
+                    </p>
+                    <p class="text-center py-1">$$ (1 + s_1 t_1)\,(1 + f\,(t_2-t_1)) = (1 + s_2 t_2) $$</p>
+                    <p class="font-semibold text-slate-700 mt-2">Buradaki terimler:</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li>$t_1, t_2$: dönemin başlangıç ve bitiş anı (yıl cinsinden, örn. ay/12)</li>
+                        <li>$s_1$: $t_1$ vadesine karşılık gelen, eğriden okunan spot oranı</li>
+                        <li>$s_2$: $t_2$ vadesine karşılık gelen, eğriden okunan spot oranı</li>
+                        <li>$f$: $t_1$'den $t_2$'ye kadar geçerli olacak forward oran (tabloda gösterilen; endeksli modda üzerine ayrıca spread eklenir)</li>
+                    </ul>
+                    <p>
+                        $t_1 = 0$ olan ilk dönemde ($s_1 t_1 = 0$ olduğundan) formül otomatik olarak
+                        $f = s_2$'ye indirgenir — yani ilk dönemin faizi doğrudan o vadenin spot oranıdır.
+                        Periyot (Faiz Periyodu) değiştiğinde $t_1, t_2$ değerleri buna göre yeniden hesaplanır;
+                        yöntem her periyot uzunluğu için aynı şekilde çalışır.
+                    </p>
+                </div>
+            </details>
+
+<script>
+    // Global Durum Değişkenleri
+    let currentMode = 'sabit'; 
+    let currentDegiskenMode = 'endeksli';
+    let nsChartInstance = null;
+
+    function formatPara(num) { return num.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    function formatOran(num) { return num.toLocaleString('tr-TR', {minimumFractionDigits: 4, maximumFractionDigits: 4}); }
+    // Faiz formatını tabloda her zaman virgülden sonra 2 hane gösterecek şekilde ayarlıyoruz.
+    function formatFaiz(num) { return num.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 4}); }
+
+    // Periyot UI Yönetimi
+    function togglePeriyotlar() {
+        const odemeTipi = document.getElementById('odemeTipi').value;
+        const divAna = document.getElementById('divAnaPeriyot');
+        const lblFaiz = document.getElementById('lblFaizPeriyot');
+        
+        if(odemeTipi === 'esit_taksit') {
+            divAna.classList.add('hidden');
+            lblFaiz.innerText = "Taksit & Faiz Periyodu";
+        } else {
+            divAna.classList.remove('hidden');
+            lblFaiz.innerText = "Faiz Periyodu";
+        }
+    }
+
+    // Menü Geçişleri
+    function setMode(mode) {
+        currentMode = mode;
+        if(mode === 'sabit') {
+            document.getElementById('btnSabit').className = "px-8 py-3 rounded-lg font-bold text-lg bg-indigo-600 text-white shadow-md transition-colors";
+            document.getElementById('btnDegisken').className = "px-8 py-3 rounded-lg font-bold text-lg bg-white text-gray-700 shadow-md border hover:bg-gray-50 transition-colors";
+            document.getElementById('panelSabit').classList.remove('hidden');
+            document.getElementById('panelDegisken').classList.add('hidden');
+            document.getElementById('chartContainer').classList.remove('hidden');
+            document.getElementById('thFaizOrani').classList.add('hidden');
+            document.getElementById('metodolojiNotu').classList.add('hidden');
+        } else {
+            document.getElementById('btnDegisken').className = "px-8 py-3 rounded-lg font-bold text-lg bg-indigo-600 text-white shadow-md transition-colors";
+            document.getElementById('btnSabit').className = "px-8 py-3 rounded-lg font-bold text-lg bg-white text-gray-700 shadow-md border hover:bg-gray-50 transition-colors";
+            document.getElementById('panelSabit').classList.add('hidden');
+            document.getElementById('panelDegisken').classList.remove('hidden');
+            document.getElementById('chartContainer').classList.remove('hidden');
+            document.getElementById('thFaizOrani').classList.remove('hidden');
+            document.getElementById('metodolojiNotu').classList.remove('hidden');
+            
+            if(currentDegiskenMode === 'endekssiz') senaryoDoldur();
+        }
+        hesaplaMotoru();
+    }
+
+    function setDegiskenMode(mode) {
+        currentDegiskenMode = mode;
+        if(mode === 'endeksli') {
+            document.getElementById('btnEndeksli').className = "flex-1 py-1 rounded-md bg-white shadow text-sm font-bold text-gray-800";
+            document.getElementById('btnEndekssiz').className = "flex-1 py-1 rounded-md text-gray-500 text-sm font-bold bg-transparent";
+            document.getElementById('inputsEndeksli').classList.remove('hidden');
+            document.getElementById('inputsEndekssiz').classList.add('hidden');
+            hesaplaMotoru(); // Endeksliye geçince anında grafiği ve tabloyu güncelle
+        } else {
+            document.getElementById('btnEndekssiz').className = "flex-1 py-1 rounded-md bg-white shadow text-sm font-bold text-gray-800";
+            document.getElementById('btnEndeksli').className = "flex-1 py-1 rounded-md text-gray-500 text-sm font-bold bg-transparent";
+            document.getElementById('inputsEndeksli').classList.add('hidden');
+            document.getElementById('inputsEndekssiz').classList.remove('hidden');
+            senaryoDoldur(); // Endekssize geçince senaryoyu doldur ve güncellemeyi oradan tetikle
+        }
+    }
+
+    // Endekssiz Hazır Senaryolar
+    function senaryoDoldur() {
+        const type = document.getElementById('senaryoTipi').value;
+        
+        if (type === 'notr') {
+            // Baz alınan TLREF eğrisi, spread eklenmeden doğrudan yansıtılır
+            let base = [37.50, 37.37, 36.39, 35.87, 33.87]; 
+            
+            document.getElementById('s_1m').value = base[0].toFixed(2);
+            document.getElementById('s_6m').value = base[1].toFixed(2);
+            document.getElementById('s_12m').value = base[2].toFixed(2);
+            document.getElementById('s_24m').value = base[3].toFixed(2);
+            document.getElementById('s_60m').value = base[4].toFixed(2);
+        } else {
+            const vals = {
+                'iyimser': [39.50, 37.00, 33.00, 30.00, 28.00], 
+                'kotumser': [39.50, 42.00, 46.00, 49.00, 50.00]
+            };
+            
+            if(type !== 'kendi') {
+                document.getElementById('s_1m').value = vals[type][0].toFixed(2);
+                document.getElementById('s_6m').value = vals[type][1].toFixed(2);
+                document.getElementById('s_12m').value = vals[type][2].toFixed(2);
+                document.getElementById('s_24m').value = vals[type][3].toFixed(2);
+                document.getElementById('s_60m').value = vals[type][4].toFixed(2);
+            }
+        }
+        
+        // Tabloyu ve grafikleri yeni senaryo rakamlarıyla anında tazele
+        hesaplaMotoru();
+    }
+
+    // Nelson-Siegel Formülü
+    function nsFormula(t, b0, b1, b2, lam) {
+        if(t <= 0) t = 1e-8;
+        let term1 = (1 - Math.exp(-lam * t)) / (lam * t);
+        let term2 = term1 - Math.exp(-lam * t);
+        return b0 + b1 * term1 + b2 * term2;
+    }
+
+    // JavaScript tabanlı (Gradient Descent) OLS Algoritması - Curve Fitting
+    function optimizeNelsonSiegel(maturities, rates) {
+        let b0 = rates[rates.length-1], b1 = rates[0]-rates[rates.length-1], b2 = 0, lam = 1.0;
+        let lr = 0.05;
+        
+        for(let iter=0; iter<3000; iter++) {
+            let gB0=0, gB1=0, gB2=0, gLam=0;
+            for(let i=0; i<maturities.length; i++) {
+                let t = maturities[i];
+                let y = rates[i];
+                
+                let term1 = (1 - Math.exp(-lam * t)) / (lam * t);
+                let term2 = term1 - Math.exp(-lam * t);
+                let pred = b0 + b1*term1 + b2*term2;
+                let err = pred - y;
+
+                gB0 += 2 * err;
+                gB1 += 2 * err * term1;
+                gB2 += 2 * err * term2;
+
+                let lam_eps = lam + 1e-5;
+                let term1_e = (1 - Math.exp(-lam_eps * t)) / (lam_eps * t);
+                let term2_e = term1_e - Math.exp(-lam_eps * t);
+                let pred_e = b0 + b1*term1_e + b2*term2_e;
+                let d_pred_d_lam = (pred_e - pred) / 1e-5;
+                gLam += 2 * err * d_pred_d_lam;
+            }
+            b0 -= lr * gB0;
+            b1 -= lr * gB1;
+            b2 -= lr * gB2;
+            lam -= (lr * 0.01) * gLam; 
+            if(lam < 0.01) lam = 0.01;
+        }
+        return [b0, b1, b2, lam];
+    }
+
+    function cizGrafik(params, originalDataX, originalDataY, isEndeksli, baseParams = null, uygulananNoktalar = []) {
+        const ctx = document.getElementById('nsChart').getContext('2d');
+        if(nsChartInstance) nsChartInstance.destroy();
+
+        let smoothX = [], smoothY = [], smoothYBase = [];
+        for(let m=1; m<=60; m++) {
+            smoothX.push(m);
+            let val = nsFormula(m/12, params[0], params[1], params[2], params[3]);
+            smoothY.push(val);
+            if (!isEndeksli && baseParams) {
+                smoothYBase.push(nsFormula(m/12, baseParams[0], baseParams[1], baseParams[2], baseParams[3]));
+            }
+        }
+
+        let datasets = [];
+        
+        // Mavi renkli "Maliyet Eğrisi" kaldırıldı. Artık baz eğriler net bir şekilde çiziliyor.
+        if (isEndeksli) {
+            datasets.push({
+                label: 'Beklenti Eğrisi',
+                data: smoothY,
+                borderColor: '#4f46e5',
+                backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                pointRadius: 0,
+                pointHitRadius: 12,
+                pointHoverRadius: 5,
+                tension: 0.4
+            });
+        } else {
+            datasets.push({
+                label: 'Beklenti Eğrisi',
+                data: smoothY,
+                borderColor: '#4f46e5',
+                backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                pointRadius: 0,
+                pointHitRadius: 12,
+                pointHoverRadius: 5,
+                tension: 0.4
+            });
+            if (baseParams) {
+                datasets.push({
+                    label: 'Beklenti Eğrisi',
+                    data: smoothYBase,
+                    borderColor: '#9ca3af',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    fill: false,
+                    pointRadius: 0,
+                    pointHitRadius: 12,
+                    pointHoverRadius: 5,
+                    tension: 0.4
+                });
+            }
+        }
+
+        // Noktaları (Girilen saf veriler) gösteriyoruz.
+        datasets.push({
+            label: 'Girilen Veri Noktaları',
+            data: originalDataX.map((x, i) => ({x: x*12, y: originalDataY[i]})),
+            type: 'scatter',
+            backgroundColor: '#ef4444',
+            pointRadius: 6
+        });
+
+        // Tablodaki Uygulanan Faiz Noktaları (Yeşil Kare/Elmas Şeklinde) eklendi
+        if (uygulananNoktalar && uygulananNoktalar.length > 0) {
+            datasets.push({
+                label: 'Tablodaki Faiz Oranları (Forward + Marj)',
+                data: uygulananNoktalar,
+                type: 'scatter',
+                backgroundColor: '#10b981', // Zümrüt Yeşili
+                borderColor: '#047857',
+                borderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                pointStyle: 'rectRot' // Dikkat çekici olsun diye şekli farklı kıldık
+            });
+        }
+
+        nsChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: smoothX,
+                datasets: datasets
+            },
+            options: {
+                responsive: true, 
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                },
+                plugins: { 
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                if (context.length > 0) {
+                                    return 'Ay: ' + context[0].parsed.x;
+                                }
+                                return '';
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ': ';
+                                if (context.parsed.y !== null) {
+                                    // formatOran fonksiyonunu kullanarak 4 basamaklı hale getiriyoruz
+                                    label += '%' + formatOran(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: { 
+                    x: { type: 'linear', title: {display: true, text: 'Vade (Ay)'}, min: 0, max: 60 } 
+                }
+            }
+        });
+    }
+
+    function hesaplaMotoru() {
+        let anapara = parseFloat(document.getElementById('anapara').value);
+        let vade = parseInt(document.getElementById('vade').value);
+        let odemeTipi = document.getElementById('odemeTipi').value;
+        
+        let faizPeriyot = parseInt(document.getElementById('faizPeriyot').value) || 1;
+        let anaPeriyot = parseInt(document.getElementById('anaPeriyot').value) || 1;
+        let graceSayisi = parseInt(document.getElementById('graceTaksitSayisi').value) || 0;
+        
+        if(odemeTipi === 'esit_taksit') {
+            anaPeriyot = faizPeriyot; 
+        }
+
+        // Vade / Periyot Uyumluluk Kontrolü
+        const temelBox = document.getElementById('temelParametrelerBox');
+        const periyotHata = document.getElementById('periyotHataMesaji');
+        const graceHata = document.getElementById('graceHataMesaji');
+        let periyotUyumsuz = (vade % faizPeriyot !== 0) || (vade % anaPeriyot !== 0);
+
+        let toplamTaksitSayisi = periyotUyumsuz ? 0 : (vade / anaPeriyot);
+        let graceUyumsuz = !periyotUyumsuz && (graceSayisi < 0 || graceSayisi >= toplamTaksitSayisi);
+
+        if (periyotUyumsuz || graceUyumsuz) {
+            temelBox.classList.add('border-2', 'border-red-500');
+            temelBox.classList.remove('border-gray-200');
+            periyotHata.classList.toggle('hidden', !periyotUyumsuz);
+            graceHata.classList.toggle('hidden', !graceUyumsuz);
+            document.getElementById('tabloGövde').innerHTML = "";
+            return; // Uyumsuzken hesaplamaya devam etme
+        } else {
+            temelBox.classList.remove('border-2', 'border-red-500');
+            temelBox.classList.add('border-gray-200');
+            periyotHata.classList.add('hidden');
+            graceHata.classList.add('hidden');
+        }
+
+        let tabloHTML = "";
+        let toplam_pv = 0, agirlikli_zaman = 0, nakit_akis_listesi = [];
+
+        tabloHTML += `<tr class="bg-red-50"><td class="py-2 px-4 font-bold">0</td>`;
+        if(currentMode === 'degisken') tabloHTML += `<td class="py-2 px-4">-</td>`;
+        tabloHTML += `<td class="py-2 px-4">0,00</td><td class="py-2 px-4">0,00</td>
+                      <td class="py-2 px-4 font-bold text-red-600">-${formatPara(anapara)}</td>
+                      <td class="py-2 px-4 font-bold">${formatPara(anapara)}</td></tr>`;
+        
+        nakit_akis_listesi.push({ay: 0, nakit: -anapara, spot: 0});
+
+        let nsParams = null, bazEgriFunc = null, iskontoEgriFunc = null;
+        let cizimParametreleri = null;
+        let uygulananFaizNoktalari = []; // Tablodaki faiz oranlarını grafiğe taşımak için liste
+        let iskontoEgriFuncSabit = null;
+
+        // Sabit Faiz Modu: kupon sabit kalır, ama iskonto artık düz bir oran değil,
+        // burada girilen TLREF eğrisinden (Nelson-Siegel fit) okunur.
+        if (currentMode === 'sabit') {
+            let ratesX = [1/12, 6/12, 12/12, 24/12, 60/12];
+            let sbRatesY = [
+                parseFloat(document.getElementById('sb_e_1m').value) || 0, parseFloat(document.getElementById('sb_e_6m').value) || 0,
+                parseFloat(document.getElementById('sb_e_12m').value) || 0, parseFloat(document.getElementById('sb_e_24m').value) || 0, parseFloat(document.getElementById('sb_e_60m').value) || 0
+            ];
+            let sabitNsParams = optimizeNelsonSiegel(ratesX, sbRatesY);
+            iskontoEgriFuncSabit = (ay) => nsFormula(ay/12, sabitNsParams[0], sabitNsParams[1], sabitNsParams[2], sabitNsParams[3]) / 100;
+            cizimParametreleri = { params: sabitNsParams, origX: ratesX, origY: sbRatesY, isEndeksli: true, baseParams: null };
+        }
+
+        // Değişken Faiz Dinamikleri
+        if (currentMode === 'degisken') {
+            let ratesY = [], ratesX = [1/12, 6/12, 12/12, 24/12, 60/12];
+            
+            if(currentDegiskenMode === 'endeksli') {
+                ratesY = [
+                    parseFloat(document.getElementById('e_1m').value), parseFloat(document.getElementById('e_6m').value),
+                    parseFloat(document.getElementById('e_12m').value), parseFloat(document.getElementById('e_24m').value), parseFloat(document.getElementById('e_60m').value)
+                ];
+                nsParams = optimizeNelsonSiegel(ratesX, ratesY);
+                // Çizim işlemi nakit akışı döngüsünden sonraya bırakıldı (noktaları toplayabilmek için)
+                cizimParametreleri = { params: nsParams, origX: ratesX, origY: ratesY, isEndeksli: true, baseParams: null };
+                bazEgriFunc = (ay) => nsFormula(ay/12, nsParams[0], nsParams[1], nsParams[2], nsParams[3]) / 100;
+                iskontoEgriFunc = bazEgriFunc; // Endeksli modda projeksiyon ve ıskonto aynı (TLREF) eğriden
+            } else {
+                ratesY = [
+                    parseFloat(document.getElementById('s_1m').value) || 0, parseFloat(document.getElementById('s_6m').value) || 0,
+                    parseFloat(document.getElementById('s_12m').value) || 0, parseFloat(document.getElementById('s_24m').value) || 0, parseFloat(document.getElementById('s_60m').value) || 0
+                ];
+                
+                // Saf TLREF Eğrisi
+                let baseRatesY = [
+                    parseFloat(document.getElementById('e_1m').value) || 0, parseFloat(document.getElementById('e_6m').value) || 0,
+                    parseFloat(document.getElementById('e_12m').value) || 0, parseFloat(document.getElementById('e_24m').value) || 0, parseFloat(document.getElementById('e_60m').value) || 0
+                ];
+                let baseParams = optimizeNelsonSiegel(ratesX, baseRatesY);
+
+                nsParams = optimizeNelsonSiegel(ratesX, ratesY);
+                cizimParametreleri = { params: nsParams, origX: ratesX, origY: ratesY, isEndeksli: false, baseParams: baseParams };
+                // Nakit akışı (kupon/forward) projeksiyonu Beklenti Eğrisi'nden...
+                bazEgriFunc = (ay) => nsFormula(ay/12, nsParams[0], nsParams[1], nsParams[2], nsParams[3]) / 100;
+                // ...ıskontolama ise piyasanın bugün fiyatladığı Saf TLREF eğrisinden yapılır
+                iskontoEgriFunc = (ay) => nsFormula(ay/12, baseParams[0], baseParams[1], baseParams[2], baseParams[3]) / 100;
+            }
+        }
+
+        // Nakit Akış Döngüsü
+        let kalan = anapara, biriken_faiz = 0;
+        let taksit_anapara = (odemeTipi === 'esit_anapara') ? (anapara / (toplamTaksitSayisi - graceSayisi)) : 0;
+
+        for(let ay = 1; ay <= vade; ay++) {
+            let yillik_faiz = 0, iskonto_spot = 0;
+
+            if(currentMode === 'sabit') {
+                yillik_faiz = parseFloat(document.getElementById('sabitFaiz').value) / 100;
+                iskonto_spot = iskontoEgriFuncSabit(ay);
+            } else {
+                // Dinamik periyotlar için dönemin başlangıç ve bitiş aylarını tespit ediyoruz
+                let periyot_baslangic = Math.floor((ay - 1) / faizPeriyot) * faizPeriyot;
+                let periyot_bitis = periyot_baslangic + faizPeriyot;
+
+                let t1 = periyot_baslangic / 12; 
+                let t2 = periyot_bitis / 12;     
+
+                let s1 = (t1 === 0) ? 0 : bazEgriFunc(periyot_baslangic);
+                let s2 = bazEgriFunc(periyot_bitis);
+                let k = 12 / faizPeriyot;
+                let forward_rate = 0;
+                if (t1 === 0) {
+                    forward_rate = s2; 
+                } else {
+                    forward_rate = ((Math.pow((1 + s2 / k), t2*k)) / Math.pow((1 + s1 / k), t1*k) - 1) * k;
+                }
+
+                if(currentDegiskenMode === 'endeksli') {
+                    yillik_faiz = forward_rate + (parseFloat(document.getElementById('spread').value) / 100);
+                } else {
+                    yillik_faiz = forward_rate;
+                }
+                
+                iskonto_spot = iskontoEgriFunc(ay); 
+            }
+
+            biriken_faiz += kalan * (yillik_faiz / 12);
+            
+            let odenen_a = 0, odenen_f = 0, gosterim_orani = "-";
+
+            if(ay % faizPeriyot === 0) {
+                odenen_f = biriken_faiz;
+                biriken_faiz = 0;
+                gosterim_orani = `%${formatFaiz(yillik_faiz * 100)}`;
+                
+                if (currentMode === 'degisken') {
+                    // Hesaplanan (Tabloda gösterilen) faizi grafik için saklıyoruz
+                    uygulananFaizNoktalari.push({x: ay, y: yillik_faiz * 100});
+                }
+            }
+
+            if(ay % anaPeriyot === 0) {
+                let taksitNo = ay / anaPeriyot;
+                if(taksitNo <= graceSayisi) {
+                    // Anaparasız dönem: sadece faiz ödenir, anapara ötelenir
+                    odenen_a = 0;
+                } else if(odemeTipi === 'esit_anapara') {
+                    odenen_a = taksit_anapara;
+                } else {
+                    let kalan_donem = Math.floor((vade - ay) / faizPeriyot) + 1;
+                    let donem_faizi = yillik_faiz * (faizPeriyot / 12);
+                    let anuite = kalan * (donem_faizi * Math.pow(1+donem_faizi, kalan_donem)) / (Math.pow(1+donem_faizi, kalan_donem) - 1);
+                    odenen_a = anuite - odenen_f;
+                }
+                kalan -= odenen_a;
+                if(Math.abs(kalan) < 0.1) kalan = 0; 
+            }
+
+            if(odenen_a > 0 || odenen_f > 0 || ay === vade) {
+                let toplam_nakit = odenen_a + odenen_f;
+                nakit_akis_listesi.push({ay: ay, nakit: toplam_nakit, spot: iskonto_spot});
+
+                tabloHTML += `<tr class="hover:bg-gray-50 border-b">
+                    <td class="py-2 px-4 font-medium">${ay}</td>`;
+                if(currentMode === 'degisken') tabloHTML += `<td class="py-2 px-4 font-semibold text-indigo-600">${gosterim_orani}</td>`;
+                tabloHTML += `
+                    <td class="py-2 px-4 text-gray-600">${formatPara(odenen_a)}</td>
+                    <td class="py-2 px-4 text-gray-600">${formatPara(odenen_f)}</td>
+                    <td class="py-2 px-4 font-bold text-gray-800 bg-gray-50/50">${formatPara(toplam_nakit)}</td>
+                    <td class="py-2 px-4 text-gray-500">${formatPara(kalan)}</td>
+                </tr>`;
+            }
+        }
+        document.getElementById('tabloGövde').innerHTML = tabloHTML;
+
+        for(let i=1; i<nakit_akis_listesi.length; i++) {
+            let cf = nakit_akis_listesi[i];
+            let donem_sayisi = cf.ay / faizPeriyot;
+            let donem_iskonto = cf.spot * (faizPeriyot / 12); 
+
+            let cf_pv = cf.nakit / Math.pow(1 + donem_iskonto, donem_sayisi);
+            toplam_pv += cf_pv;
+            agirlikli_zaman += ((cf.ay / 12) * cf_pv);
+        }
+
+        let macaulay = 0, modified = 0;
+        
+        if (toplam_pv > 0) {
+            macaulay = agirlikli_zaman / toplam_pv;
+            let avg_spot = nakit_akis_listesi[nakit_akis_listesi.length-1].spot;
+            let yillik_frekans = 12 / faizPeriyot;
+            modified = macaulay / (1 + (avg_spot / yillik_frekans));
+        }
+
+        document.getElementById('resPV').innerText = `${formatPara(toplam_pv)} TL`;
+        document.getElementById('resMac').innerText = formatOran(macaulay);
+        document.getElementById('resMod').innerText = formatOran(modified);
+
+        document.getElementById('macYilText').innerText = formatPara(macaulay);
+        
+        let faizSokVal = parseFloat(document.getElementById('faizSok').value) || 0;
+        let modDegisim = -(modified * faizSokVal);
+        let degisimStr = (modDegisim > 0 ? "+" : "") + "%" + formatFaiz(Math.abs(modDegisim));
+        if (modDegisim < 0) degisimStr = "-%" + formatFaiz(Math.abs(modDegisim));
+        
+        document.getElementById('modDegisimText').innerText = degisimStr;
+        document.getElementById('modDegisimText').className = `font-bold ${modDegisim >= 0 ? 'text-green-600' : 'text-red-600'}`;
+
+        let pvNote = document.getElementById('resPVNote');
+        let pvFarki = toplam_pv - anapara;
+        
+        if(Math.abs(pvFarki) < 1) {
+            pvNote.innerText = "Başabaş İşlem";
+            pvNote.className = "text-xs mt-3 text-green-600 font-bold bg-green-50 p-1.5 rounded-md inline-block";
+        } else if(pvFarki > 0) {
+            pvNote.innerText = `+${formatPara(pvFarki)} TL Prim (Kâr)`;
+            pvNote.className = "text-xs mt-3 text-blue-600 font-bold bg-blue-50 p-1.5 rounded-md inline-block";
+        } else {
+            pvNote.innerText = `${formatPara(pvFarki)} TL İskonto (Zarar)`;
+            pvNote.className = "text-xs mt-3 text-red-600 font-bold bg-red-50 p-1.5 rounded-md inline-block";
+        }
+
+        // Noktaları topladığımız için grafiği artık en son çizdiriyoruz.
+        if ((currentMode === 'degisken' || currentMode === 'sabit') && cizimParametreleri) {
+            cizGrafik(
+                cizimParametreleri.params, 
+                cizimParametreleri.origX, 
+                cizimParametreleri.origY, 
+                cizimParametreleri.isEndeksli, 
+                cizimParametreleri.baseParams,
+                uygulananFaizNoktalari
+            );
+        }
+    }
+
+    // Inputları dinle ve otomatik hesapla
+    document.querySelectorAll('input, select').forEach(el => {
+        el.addEventListener('input', hesaplaMotoru);
+    });
+
+    // Başlangıç Çalıştırması
+    window.onload = () => {
+        togglePeriyotlar();
+        setMode('sabit');
+    };
+</script>
+</body>
+</html>
