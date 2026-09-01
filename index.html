@@ -24,7 +24,7 @@
 <div class="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
     <!-- Başlık -->
     <div class="bg-indigo-700 p-6 text-white text-center">
-        <h1 class="text-3xl font-bold">Kredi & Tahvil Fiyatlama</h1>
+        <h1 class="text-3xl font-bold">Finansal Enstrüman Fiyatlama</h1>
         <p class="text-indigo-200 mt-2">Sabit & Değişken Faiz, Verim Eğrisi, Nelson-Siegel, PV & Duration</p>
     </div>
 
@@ -83,6 +83,18 @@
                     <label class="block text-sm font-medium text-gray-700">Enstrüman Faizi (%)</label>
                     <input type="number" id="sabitFaiz" value="24.00" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
                 </div>
+
+                <div id="kademeliFaizWrapper" class="mt-4 border-t pt-4">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <label class="block text-sm font-medium text-gray-700">Kademeli Faiz Ayarı</label>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] font-bold text-gray-600 uppercase tracking-wide">Kademe</label>
+                            <input type="number" id="kademeliFaizSayisi" value="1" min="1" class="w-16 rounded-md border-gray-300 shadow-sm p-1.5 border text-center">
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-gray-500 mb-2">Bu ayar yalnızca faiz ödemesinde kullanılır; iskonto eğrisini etkilemez. Süreler "dönem" cinsindendir; faiz periyodu ne ise o periyot baz alınır.</p>
+                    <div id="kademeliFaizContainer" class="space-y-2"></div>
+                </div>
             </div>
 
             <!-- SABİT FAİZ AYARLARI -->
@@ -140,7 +152,7 @@
                         <option value="kendi">Kendi Beklentim (Manuel)</option>
                     </select>
 
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Beklenti Eğrisi (%)</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Kişisel Beklenti Eğrisi (%)</label>
                     <div class="grid grid-cols-2 gap-2">
                         <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">1 Ay</span><input type="number" id="s_1m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
                         <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">6 Ay</span><input type="number" id="s_6m" step="0.01" class="senaryo-input w-full rounded border p-1 text-sm"></div>
@@ -269,6 +281,96 @@
     // Faiz formatını tabloda her zaman virgülden sonra 2 hane gösterecek şekilde ayarlıyoruz.
     function formatFaiz(num) { return num.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 4}); }
 
+    function rebuildKademeliFaizInputs() {
+        const count = Math.max(1, parseInt(document.getElementById('kademeliFaizSayisi').value) || 1);
+        const container = document.getElementById('kademeliFaizContainer');
+        const vade = Math.max(1, parseInt(document.getElementById('vade').value) || 1);
+        const faizPeriyot = Math.max(1, parseInt(document.getElementById('faizPeriyot').value) || 1);
+        const defaultRate = parseFloat(document.getElementById('sabitFaiz').value) || 0;
+        const mevcut = [];
+        const toplamPeriyot = Math.max(1, Math.ceil(vade / faizPeriyot));
+
+        container.querySelectorAll('[data-kademe-tip]').forEach((el) => {
+            const idx = Number(el.dataset.kademeIndex);
+            if (!mevcut[idx]) mevcut[idx] = {};
+            mevcut[idx][el.dataset.kademeTip] = el.value;
+        });
+
+        let rows = '';
+        for (let i = 0; i < count; i++) {
+            const baseSure = Math.max(1, Math.floor(toplamPeriyot / count));
+            const oncekiSure = mevcut[i] && mevcut[i].sure ? mevcut[i].sure : (i === count - 1 ? Math.max(1, toplamPeriyot - (baseSure * (count - 1))) : baseSure);
+            const oncekiOran = mevcut[i] && mevcut[i].oran ? mevcut[i].oran : defaultRate;
+            rows += `
+                <div class="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1">Kademe ${i + 1} süre (dönem)</label>
+                        <input type="number" min="1" data-kademe-index="${i}" data-kademe-tip="sure" value="${oncekiSure}" class="w-full rounded-md border-gray-300 shadow-sm p-1.5 border">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1">Kademe ${i + 1} faiz (%)</label>
+                        <input type="number" step="0.01" data-kademe-index="${i}" data-kademe-tip="oran" value="${oncekiOran}" class="w-full rounded-md border-gray-300 shadow-sm p-1.5 border">
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = rows;
+    }
+
+    function getAktifKademeliFaizYillik(ay) {
+        const sayi = Math.max(1, parseInt(document.getElementById('kademeliFaizSayisi').value) || 1);
+        const defaultRate = parseFloat(document.getElementById('sabitFaiz').value) || 0;
+        const faizPeriyot = Math.max(1, parseInt(document.getElementById('faizPeriyot').value) || 1);
+        const donemNo = Math.max(1, Math.ceil(ay / faizPeriyot));
+        let gecen = 0;
+
+        for (let i = 0; i < sayi; i++) {
+            const sureEl = document.querySelector(`[data-kademe-index="${i}"][data-kademe-tip="sure"]`);
+            const oranEl = document.querySelector(`[data-kademe-index="${i}"][data-kademe-tip="oran"]`);
+            const sureRaw = parseFloat(sureEl?.value);
+            const oranRaw = parseFloat(oranEl?.value);
+
+            const sure = Number.isFinite(sureRaw) ? Math.max(0, Math.round(sureRaw)) : 0;
+            const oran = Number.isFinite(oranRaw) ? oranRaw : defaultRate;
+
+            if (sure <= 0) continue;
+
+            const baslangic = gecen + 1;
+            const bitis = gecen + sure;
+            if (donemNo >= baslangic && donemNo <= bitis) {
+                return oran / 100;
+            }
+
+            gecen += sure;
+        }
+
+        return defaultRate / 100;
+    }
+
+    function refreshOdemeTipi() {
+        const select = document.getElementById('odemeTipi');
+        const annuityOption = select.querySelector('option[value="esit_taksit"]');
+        const isDegiskenNoAnnuity = currentMode === 'degisken' && (currentDegiskenMode === 'endeksli' || currentDegiskenMode === 'endekssiz');
+
+        if (isDegiskenNoAnnuity) {
+            if (annuityOption) {
+                annuityOption.style.display = 'none';
+                annuityOption.disabled = true;
+            }
+            if (select.value === 'esit_taksit') {
+                select.value = 'esit_anapara';
+            }
+        } else if (annuityOption) {
+            annuityOption.style.display = '';
+            annuityOption.disabled = false;
+        }
+
+        const kademeliWrapper = document.getElementById('kademeliFaizWrapper');
+        const shouldHideKademeli = (currentMode === 'sabit' && select.value === 'esit_taksit') ||
+            (currentMode === 'degisken' && (currentDegiskenMode === 'endeksli' || currentDegiskenMode === 'endekssiz'));
+        kademeliWrapper.classList.toggle('hidden', shouldHideKademeli);
+    }
+
     // Periyot UI Yönetimi
     function togglePeriyotlar() {
         const odemeTipi = document.getElementById('odemeTipi').value;
@@ -282,6 +384,8 @@
             divAna.classList.remove('hidden');
             lblFaiz.innerText = "Faiz Periyodu";
         }
+
+        refreshOdemeTipi();
     }
 
     // Menü Geçişleri
@@ -306,6 +410,7 @@
             
             if(currentDegiskenMode === 'endekssiz') senaryoDoldur();
         }
+        refreshOdemeTipi();
         hesaplaMotoru();
     }
 
@@ -316,7 +421,6 @@
             document.getElementById('btnEndekssiz').className = "flex-1 py-1 rounded-md text-gray-500 text-sm font-bold bg-transparent";
             document.getElementById('inputsEndeksli').classList.remove('hidden');
             document.getElementById('inputsEndekssiz').classList.add('hidden');
-            hesaplaMotoru(); // Endeksliye geçince anında grafiği ve tabloyu güncelle
         } else {
             document.getElementById('btnEndekssiz').className = "flex-1 py-1 rounded-md bg-white shadow text-sm font-bold text-gray-800";
             document.getElementById('btnEndeksli').className = "flex-1 py-1 rounded-md text-gray-500 text-sm font-bold bg-transparent";
@@ -324,6 +428,8 @@
             document.getElementById('inputsEndekssiz').classList.remove('hidden');
             senaryoDoldur(); // Endekssize geçince senaryoyu doldur ve güncellemeyi oradan tetikle
         }
+        refreshOdemeTipi();
+        hesaplaMotoru(); // Endeksliye geçince anında grafiği ve tabloyu güncelle
     }
 
     // Endekssiz Hazır Senaryolar
@@ -434,7 +540,7 @@
             });
         } else {
             datasets.push({
-                label: 'Beklenti Eğrisi',
+                label: 'Kişisel Beklenti Eğrisi',
                 data: smoothY,
                 borderColor: '#4f46e5',
                 backgroundColor: 'rgba(79, 70, 229, 0.1)',
@@ -447,7 +553,7 @@
             });
             if (baseParams) {
                 datasets.push({
-                    label: 'Beklenti Eğrisi',
+                    label: 'Piyasa Beklentisi Eğrisi',
                     data: smoothYBase,
                     borderColor: '#9ca3af',
                     borderWidth: 2,
@@ -637,7 +743,7 @@
             let yillik_faiz = 0, iskonto_spot = 0;
 
             if(currentMode === 'sabit') {
-                yillik_faiz = parseFloat(document.getElementById('sabitFaiz').value) / 100;
+                yillik_faiz = getAktifKademeliFaizYillik(ay);
                 iskonto_spot = iskontoEgriFuncSabit(ay);
             } else {
                 // Dinamik periyotlar için dönemin başlangıç ve bitiş aylarını tespit ediyoruz
@@ -775,6 +881,27 @@
         }
     }
 
+    document.getElementById('kademeliFaizSayisi').addEventListener('input', () => {
+        rebuildKademeliFaizInputs();
+        hesaplaMotoru();
+    });
+
+    document.getElementById('vade').addEventListener('input', () => {
+        rebuildKademeliFaizInputs();
+        hesaplaMotoru();
+    });
+
+    document.getElementById('sabitFaiz').addEventListener('input', () => {
+        const count = Math.max(1, parseInt(document.getElementById('kademeliFaizSayisi').value) || 1);
+        if (count === 1) {
+            const row = document.querySelector('[data-kademe-index="0"][data-kademe-tip="oran"]');
+            if (row) row.value = document.getElementById('sabitFaiz').value;
+        }
+        hesaplaMotoru();
+    });
+
+    document.getElementById('kademeliFaizContainer').addEventListener('input', hesaplaMotoru);
+
     // Inputları dinle ve otomatik hesapla
     document.querySelectorAll('input, select').forEach(el => {
         el.addEventListener('input', hesaplaMotoru);
@@ -782,6 +909,7 @@
 
     // Başlangıç Çalıştırması
     window.onload = () => {
+        rebuildKademeliFaizInputs();
         togglePeriyotlar();
         setMode('sabit');
     };
