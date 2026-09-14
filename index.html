@@ -49,7 +49,7 @@
                 
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700">Vade (Ay)</label>
-                    <input type="number" id="vade" value="48" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                    <input type="number" id="vade" value="24" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
                 </div>
 
                 <div class="mb-4">
@@ -63,11 +63,11 @@
                 <div class="grid grid-cols-2 gap-4 mb-2">
                     <div>
                         <label id="lblFaizPeriyot" class="block text-xs font-bold text-gray-600 uppercase tracking-wide">Faiz Periyodu</label>
-                        <input type="number" id="faizPeriyot" value="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                        <input type="number" id="faizPeriyot" value="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
                     </div>
                     <div id="divAnaPeriyot">
                         <label class="block text-xs font-bold text-gray-600 uppercase tracking-wide">Anapara Periyodu</label>
-                        <input type="number" id="anaPeriyot" value="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
+                        <input type="number" id="anaPeriyot" value="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500">
                     </div>
                 </div>
                 <p id="periyotHataMesaji" class="text-xs text-red-600 font-semibold mt-2 hidden">⚠️ Vade, periyotlara tam bölünmüyor! Lütfen Vade'yi periyotların katı olacak şekilde girin.</p>
@@ -81,7 +81,7 @@
                 
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700">Enstrüman Faizi (%)</label>
-                    <input type="number" id="sabitFaiz" value="24.00" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                    <input type="number" id="sabitFaiz" value="42.00" step="0.01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
                 </div>
 
                 <div id="kademeliFaizWrapper" class="mt-4 border-t pt-4">
@@ -103,7 +103,7 @@
                 <div class="bg-blue-50 border border-blue-200 text-blue-800 text-xs p-3 rounded-lg mb-4 leading-relaxed">
                     <strong>📌 Not:</strong> Enstrüman Faizi sabit kalır; her taksit bu eğriden okunan o aya özgü spot oranıyla iskontolanır.
                 </div>
-                <label class="block text-sm font-bold text-gray-700 mb-2">Piyasa Beklentilerinizi Girin (%)</label>
+                <label class="block text-sm font-bold text-gray-700 mb-2">Piyasa Beklentilerinizi Girin (OIS Curve) (%)</label>
                 <div class="grid grid-cols-2 gap-2">
                     <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">1 Ay</span><input type="number" id="sb_e_1m" value="37.5054" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
                     <div class="flex items-center"><span class="w-10 text-xs font-bold text-gray-500">6 Ay</span><input type="number" id="sb_e_6m" value="37.3729" step="0.0001" class="w-full rounded border p-1 text-sm"></div>
@@ -168,7 +168,7 @@
         <div class="lg:col-span-2 space-y-6 fade-in">
             
             <!-- Risk Metrikleri -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div id="riskMetrikleri" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-white p-4 border rounded-xl shadow-sm text-center relative overflow-hidden flex flex-col justify-between">
                     <div>
                         <p class="text-sm text-gray-500 font-medium relative z-10">Toplam PV</p>
@@ -177,7 +177,7 @@
                     <p id="resPVNote" class="text-xs mt-3 text-gray-400 relative z-10"></p>
                 </div>
                 <!-- Macaulay Duration Metriği ve Dinamik Yorum -->
-                <div class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
+                <div id="macaulayCard" class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
                     <div>
                         <p class="text-sm text-gray-500 font-medium">Macaulay Duration</p>
                         <p id="resMac" class="text-2xl font-bold text-gray-800">-</p>
@@ -187,7 +187,7 @@
                     </p>
                 </div>
                 <!-- Modified Duration Metriği ve Dinamik Yorum -->
-                <div class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
+                <div id="modifiedCard" class="bg-white p-4 border rounded-xl shadow-sm text-center flex flex-col justify-between">
                     <div>
                         <p class="text-sm text-gray-500 font-medium">Modified Duration</p>
                         <p id="resMod" class="text-2xl font-bold text-gray-800">-</p>
@@ -399,6 +399,9 @@
             document.getElementById('chartContainer').classList.remove('hidden');
             document.getElementById('thFaizOrani').classList.add('hidden');
             document.getElementById('metodolojiNotu').classList.add('hidden');
+            document.getElementById('macaulayCard').classList.remove('hidden');
+            document.getElementById('modifiedCard').classList.remove('hidden');
+            document.getElementById('riskMetrikleri').className = 'grid grid-cols-1 md:grid-cols-3 gap-4';
         } else {
             document.getElementById('btnDegisken').className = "px-8 py-3 rounded-lg font-bold text-lg bg-indigo-600 text-white shadow-md transition-colors";
             document.getElementById('btnSabit').className = "px-8 py-3 rounded-lg font-bold text-lg bg-white text-gray-700 shadow-md border hover:bg-gray-50 transition-colors";
@@ -407,6 +410,9 @@
             document.getElementById('chartContainer').classList.remove('hidden');
             document.getElementById('thFaizOrani').classList.remove('hidden');
             document.getElementById('metodolojiNotu').classList.remove('hidden');
+            document.getElementById('macaulayCard').classList.add('hidden');
+            document.getElementById('modifiedCard').classList.add('hidden');
+            document.getElementById('riskMetrikleri').className = 'grid grid-cols-1 md:grid-cols-1 gap-4';
             
             if(currentDegiskenMode === 'endekssiz') senaryoDoldur();
         }
@@ -861,10 +867,10 @@
             pvNote.innerText = "Başabaş İşlem";
             pvNote.className = "text-xs mt-3 text-green-600 font-bold bg-green-50 p-1.5 rounded-md inline-block";
         } else if(pvFarki > 0) {
-            pvNote.innerText = `+${formatPara(pvFarki)} TL Prim (Kâr)`;
+            pvNote.innerText = `+${formatPara(pvFarki)} TL Kâr`;
             pvNote.className = "text-xs mt-3 text-blue-600 font-bold bg-blue-50 p-1.5 rounded-md inline-block";
         } else {
-            pvNote.innerText = `${formatPara(pvFarki)} TL İskonto (Zarar)`;
+            pvNote.innerText = `${formatPara(pvFarki)} TL Zarar`;
             pvNote.className = "text-xs mt-3 text-red-600 font-bold bg-red-50 p-1.5 rounded-md inline-block";
         }
 
